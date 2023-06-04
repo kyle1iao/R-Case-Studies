@@ -1,0 +1,733 @@
+---
+title: "Modern Data Mining Final Project - Hotel Cancellations"
+author:
+- Jacob Canelo-Garcia
+- Kateryna Suprun
+- Kyle Liao
+date: '4/30, 2023'
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+  html_document:
+    code_folding: show
+    highlight: haddock
+    theme: lumen
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+urlcolor: blue  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.height=4, fig.width=6, warning = F)
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(ggplot2, dplyr, tidyverse, gridExtra, ggrepel, plotly, skimr, 
+               tidytext, maps, car, glmnet, pROC, forcats, xgboost, caret,
+                tree, rpart, randomForest, ranger, rattle, pROC, partykit,
+               data.table, rpart.plot)
+```
+
+# Executive Summary
+
+## Background
+
+Analyzing hotel bookings is important because it helps hotel management make informed decisions that can positively impact the bottom line. By studying patterns in booking data, hotel operators can determine the best times to offer promotions, adjust prices, allocate resources, and improve guest experiences. Additionally, analyzing cancellation data can help hotels identify areas where they may need to improve their booking policies, such as offering more flexible cancellation options or better managing overbooking situations. Predicting cancellations can also help hotels avoid revenue losses by allowing them to adjust staffing levels and resource allocation based on expected occupancy rates. In short, analyzing hotel bookings is crucial for ensuring the success and profitability of any hotel business.
+
+## Data Summary
+
+We have a large data set with each row corresponding to a unique hotel booking. Each booking has information attached to it such as arrival date, how many nights are spent, the number of guests, etc. See the data card below for a breakdown of each feature of the data and the information it represents.
+
+## Methods and Main Findings
+
+In this study, we look to conduct exploratory data analysis to answer a number of questions such as how guest counts vary across months and hotel types, what percentage of bookings are ultimately cancelled, what the top 20 countries in terms of booking frequencies are, etc.
+
+We follow these findings up with modeling to predict whether or not a booking will be cancelled based on other features of a row (e.g. guest count, average daily rate, if a guest is a repeated guest, etc.). This essentially boils down to a classification question, and so we look to tackle this problem with classification models. We first run a logistic regression with all features included. We then use LASSO for regularization and run a logistic regression with select features. Next we create a random forest model, followed by a gradient boosted tree.
+
+Accuracy scores for each model:
+
+Logistic Regression: 0.81
+
+LASSO + Logistic Regression: 0.78
+
+Random Forest: 0.86
+
+XG Boost: 0.82
+
+## Issues and concerns
+
+The data set used here has records for only two years: 2015-2017, which might not be fully representative of all other years. This data set was also recorded pre-COVID. Therefore, the hotel industry might have changed to an extent after COVID, ie. updating their safety and cleaning protocols, reduce common area capacity, and the people's preferences for travel might have also changed. The data set also has a pretty limited attributes set. Having any indicators for weather or news events would add to the accuracy of our models. 
+
+# Detailed Workflow and Analysis
+
+## Goal of the study
+
+In this project, we explore what factors influence the demand of different hotel listings. We explore different customer profiles and hotel types and seek to understand what motivates booking decisions. After getting a better understanding of hotel data and factors relevant to cancellations, we look to predict whether a booking will be cancelled or not based on other features of the booking.
+
+In this project, we analyze a data set that contains booking information for different types of hotels in order to deduce what factors influence the demand for listings. We seek to answer questions like how to get the best daily rate when booking dates, what the best time of year to book hotel rooms is, or how to predict if a hotel will have disproportionately high demand compared to other options.
+
+## The Data
+
+This is a data card taking from the original data set that explains variables present in our data.
+
++--------------------------------+----------------------------------------------------------------------------------+
+| Variable                       | Description                                                                      |
++:===============================+:=================================================================================+
+| hotel                          | Hotel (H1 = Resort Hotel or H2 = City Hotel)                                     |
++--------------------------------+----------------------------------------------------------------------------------+
+| is_canceled                    | Value indicating if the booking was canceled (1) or not (0)                      |
++--------------------------------+----------------------------------------------------------------------------------+
+| lead_time                      | Number of days that elapsed between the entering date of the                     |
+|                                |                                                                                  |
+|                                | booking into the PMS and the arrival date                                        |
++--------------------------------+----------------------------------------------------------------------------------+
+| arrival_date_year              | Year of arrival date                                                             |
++--------------------------------+----------------------------------------------------------------------------------+
+| arrival_date_month             | Month of arrival date                                                            |
++--------------------------------+----------------------------------------------------------------------------------+
+| arrival_date_week_number       | Week number of year for arrival date                                             |
++--------------------------------+----------------------------------------------------------------------------------+
+| arrival_date_day_of_month      | Day of arrival date                                                              |
++--------------------------------+----------------------------------------------------------------------------------+
+| stays_in_weekend_nights        | Number of weekend nights (Saturday or Sunday) the guest                          |
+|                                |                                                                                  |
+|                                | stayed or booked to stay at the hotel                                            |
++--------------------------------+----------------------------------------------------------------------------------+
+| stays_in_week_nights           | Number of week nights (Monday to Friday) the guest stayed or                     |
+|                                |                                                                                  |
+|                                | booked to stay at the hotel                                                      |
++--------------------------------+----------------------------------------------------------------------------------+
+| adults                         | Number of adults                                                                 |
++--------------------------------+----------------------------------------------------------------------------------+
+| children                       | Number of children                                                               |
++--------------------------------+----------------------------------------------------------------------------------+
+| babies                         | Number of babies                                                                 |
++--------------------------------+----------------------------------------------------------------------------------+
+| meal                           | Type of meal booked. Categories are presented in standard                        |
+|                                |                                                                                  |
+|                                | hospitality meal packages:                                                       |
+|                                |                                                                                  |
+|                                | Undefined/SC -- no meal package                                                  |
+|                                |                                                                                  |
+|                                | BB -- Bed & Breakfast;                                                           |
+|                                |                                                                                  |
+|                                | HB -- Half board (breakfast and one other meal -- usually dinner)                |
+|                                |                                                                                  |
+|                                | FB -- Full board (breakfast, lunch and dinner)                                   |
++--------------------------------+----------------------------------------------------------------------------------+
+| country                        | Country of origin. Categories are represented in the ISO 3155--                  |
+|                                |                                                                                  |
+|                                | 3:2013 format                                                                    |
++--------------------------------+----------------------------------------------------------------------------------+
+| market_segment                 | Market segment designation. In categories, the term "TA"                         |
+|                                |                                                                                  |
+|                                | means "Travel Agents" and "TO" means "Tour Operators"                            |
++--------------------------------+----------------------------------------------------------------------------------+
+| distribution_channel           | Booking distribution channel. The term "TA" means "Travel                        |
+|                                |                                                                                  |
+|                                | Agents" and "TO" means "Tour Operators"                                          |
++--------------------------------+----------------------------------------------------------------------------------+
+| is_repeated_guest              | Value indicating if the booking name was from a repeated                         |
+|                                |                                                                                  |
+|                                | guest (1) or not (0)                                                             |
++--------------------------------+----------------------------------------------------------------------------------+
+| previous_cancellations         | Number of previous bookings that were cancelled by the                           |
+|                                |                                                                                  |
+|                                | customer prior to the current booking                                            |
++--------------------------------+----------------------------------------------------------------------------------+
+| previous_bookings_not_canceled | Number of previous bookings not cancelled by the customer                        |
+|                                |                                                                                  |
+|                                | prior to the current booking                                                     |
++--------------------------------+----------------------------------------------------------------------------------+
+| reserved_room_type             | Code of room type reserved. Code is presented instead of                         |
+|                                |                                                                                  |
+|                                | designation for anonymity reasons                                                |
++--------------------------------+----------------------------------------------------------------------------------+
+| assigned_room_type             | Code for the type of room assigned to the booking. Sometimes                     |
+|                                |                                                                                  |
+|                                | the assigned room type differs from the reserved room type                       |
+|                                |                                                                                  |
+|                                | due to hotel operation reasons (e.g. overbooking) or by                          |
+|                                |                                                                                  |
+|                                | customer request. Code is presented instead of designation for anonymity reasons |
++--------------------------------+----------------------------------------------------------------------------------+
+| booking_changes                | Number of changes/amendments made to the booking from                            |
+|                                |                                                                                  |
+|                                | the moment the booking was entered on the PMS until the                          |
+|                                |                                                                                  |
+|                                | moment of check-in or cancellation                                               |
++--------------------------------+----------------------------------------------------------------------------------+
+| deposit_type                   | Indication on if the customer made a deposit to guarantee the                    |
+|                                |                                                                                  |
+|                                | booking. This variable can assume three categories:                              |
+|                                |                                                                                  |
+|                                | No Deposit -- no deposit was made                                                |
+|                                |                                                                                  |
+|                                | Non Refund -- a deposit was made in the value of the total stay                  |
+|                                |                                                                                  |
+|                                | cost                                                                             |
+|                                |                                                                                  |
+|                                | Refundable -- a deposit was made with a value under the total cost of stay.      |
++--------------------------------+----------------------------------------------------------------------------------+
+| agent                          | ID of the travel agency that made the booking                                    |
++--------------------------------+----------------------------------------------------------------------------------+
+| company                        | ID of the company/entity that made the booking or responsible                    |
+|                                |                                                                                  |
+|                                | for paying the booking. ID is presented instead of designation                   |
+|                                |                                                                                  |
+|                                | for anonymity reasons                                                            |
++--------------------------------+----------------------------------------------------------------------------------+
+| days_in_waiting_list           | Number of days the booking was in the waiting list before it                     |
+|                                |                                                                                  |
+|                                | was confirmed to the customer                                                    |
++--------------------------------+----------------------------------------------------------------------------------+
+| customer_type                  | Type of booking, assuming one of four categories:                                |
+|                                |                                                                                  |
+|                                | Contract - when the booking has an allotment or other type of                    |
+|                                |                                                                                  |
+|                                | contract associated to it                                                        |
+|                                |                                                                                  |
+|                                | Group -- when the booking is associated to a group                               |
+|                                |                                                                                  |
+|                                | Transient -- when the booking is not part of a group or contract,                |
+|                                |                                                                                  |
+|                                | and is not associated to other transient booking                                 |
+|                                |                                                                                  |
+|                                | Transient-party -- when the booking is transient, but is                         |
+|                                |                                                                                  |
+|                                | associated to at least other transient booking                                   |
++--------------------------------+----------------------------------------------------------------------------------+
+| adr                            | Average Daily Rate as defined by dividing the sum of all                         |
+|                                |                                                                                  |
+|                                | lodging transactions by the total number of staying nights                       |
++--------------------------------+----------------------------------------------------------------------------------+
+| required_car_parking_spaces    | Number of car parking spaces required by the customer                            |
++--------------------------------+----------------------------------------------------------------------------------+
+| total_of_special_requests      | Number of special requests made by the customer (e.g. twin                       |
+|                                |                                                                                  |
+|                                | bed or high floor)                                                               |
++--------------------------------+----------------------------------------------------------------------------------+
+| reservation_status             | Reservation last status, assuming one of three categories:                       |
+|                                |                                                                                  |
+|                                | Canceled -- booking was canceled by the customer;                                |
+|                                |                                                                                  |
+|                                | Check-Out -- customer has checked in but already departed;                       |
+|                                |                                                                                  |
+|                                | No-Show -- customer did not check-in and did inform the hotel                    |
+|                                |                                                                                  |
+|                                | of the reason why                                                                |
++--------------------------------+----------------------------------------------------------------------------------+
+| reservation_status_date        | Date at which the last status was set. This variable can be used                 |
+|                                |                                                                                  |
+|                                | in conjunction with the Reservation Status to understand when                    |
+|                                |                                                                                  |
+|                                | was the booking canceled or when did the customer checked-                       |
+|                                |                                                                                  |
+|                                | out of the hotel                                                                 |
++--------------------------------+----------------------------------------------------------------------------------+
+
+Data files:
+
+-   **`hotel_bookings.csv`**
+
+# Research approach
+
+## Getting Familiar with Data and EDA
+
+### Data Cleaning and Pre-processing
+
+To clean data, we begin by removing bookings where there are no guests at all as this does not make sense. We also look to do some initial visualizations by generating graphs on where guests originate from, percentage of cancelled bookings, distribution of average daily rates across room and hotel types, and a time series of the total number of guests per month by hotel type.
+
+```{r, include=F}
+data <- read.csv("hotel_bookings.csv", sep=",", header=T, as.is=T, na.strings=c("NULL", "NA"))
+```
+
+```{r, include=F}
+# first look
+head(data, n = 100)
+```
+
+```{r, include=F}
+names(data)
+```
+
+```{r, include=F}
+# see structure of dataset 
+str(data)
+```
+
+```{r, include=F}
+# summary statistics of dataset
+sapply(data, function(x) sum(is.na(x)))
+```
+
+```{r, include=F}
+no_guests <- subset(data, adults == 0 & children == 0 & babies == 0)
+nrow(no_guests)
+
+no_country <- subset(data, is.na(data$country))
+nrow(no_country)
+```
+
+```{r, include=F}
+data_cleaned <- subset(data, adults != 0 | children != 0 | babies != 0)
+data_cleaned <- data_cleaned[!is.na(data_cleaned$country), ]
+data_cleaned <- data_cleaned[!is.na(data_cleaned$children), ]
+data_cleaned$children <- as.integer(data_cleaned$children)
+```
+
+```{r, include = F}
+# number of rows where assigned room type differs from reserved_room_type
+diff_rooms <- subset(data, reserved_room_type != assigned_room_type)
+nrow(diff_rooms)
+```
+
+#### Percentage of Cancelled and Not Cancelled Bookings
+
+\
+```{r, echo = F, out.width='50%', out.height='50%', fig.align='center'}
+n_cancelled <- sum(data$is_canceled == 1)
+n_not_cancelled <- sum(data$is_canceled == 0)
+
+df <- data.frame(
+  value = c(n_not_cancelled, n_cancelled),
+  label = c("Not Cancelled", "Cancelled")
+)
+
+df$percent <- df$value / sum(df$value) * 100
+
+ggplot(df, aes(x = "", y = value, fill = label)) +
+  geom_bar(stat = "identity", color = "white") +
+  coord_polar("y", start = 0) +
+  geom_text(aes(label = paste0(round(percent), "%")), position = position_stack(vjust = 0.5)) +
+  labs(fill = "Booking Status") +
+  ggtitle("Percentage of Cancelled and Not Cancelled Bookings") +
+  theme_void()
+  
+```
+
+We see that 63% of bookings are not cancelled, and 37% of bookings are cancelled. This is a significant number of cancellations. If we are able to predict cancellations based on other information belonging to a booking, we may be able to save hotels a lot of money.
+
+#### Top Countries of Origin by Frequency of Bookings
+
+\
+```{r, echo = F, out.width='50%', out.height='50%', fig.align='center'}
+data_cleaned %>%
+  filter(is_canceled == 0) %>%
+  count(country) %>%
+  top_n(20, n) %>%
+  ggplot(aes(x = reorder(country, -n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  xlab("Country") + ylab("Frequency") +
+  ggtitle("Top 20 Countries by Frequency of Bookings (Not Cancelled)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+```
+
+We see that the top 5 countries by frequency of bookings are PRT (Portugal), GBR (Great Britain), FRA (France), ESP (Spain), and DEU (Germany). Intuitively, this makes sense as the hotel industry in these countries is very large, and thus we expect a large number of bookings by people in these countries.
+
+#### Distribution of Average Daily Rates Across Hotel and Room Type
+
+```{r, echo = F, fig.align='center'}
+# See how price varies across city and resort hotels
+# First add adr per person
+unique(data_cleaned$hotel)
+data_cleaned$adr_per_person <- data_cleaned$adr / (data_cleaned$adults + data_cleaned$children)
+
+data_cleaned %>%
+  filter(is_canceled == 0) %>%
+  ggplot(aes(x = reserved_room_type, y = adr_per_person, fill = hotel)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c("Resort Hotel" = "blue", "City Hotel" = "red")) +
+  theme_minimal() +
+  labs(x = "Reserved Room Type", y = "ADR per Person",
+       title = "Distribution of ADR per Person Across Hotel and Room Types")
+```
+
+We see here across room types there is not a clear trend between ADR per Person and the hotel type. For room types A, C, D, E, G, we see that city hotels are on average slightly higher in terms of ADR/pp. For the other room types, we see that resort hotels have comparable median prices or exceed the median ADR/pp of city hotels.
+
+#### Guest Count by Month and Hotel Type
+
+ 
+
+```{r, fig.width = 10, echo = F, fig.align='center'}
+# Find total number of guests in each month split across city hotel and resort hotel 
+
+data_resort <- data_cleaned %>% filter(hotel == "Resort Hotel")
+data_city <- data_cleaned %>% filter(hotel == "City Hotel")
+
+resort_guests <- data_resort %>%
+  count(arrival_date_month) %>%
+  rename(month = !!sym("arrival_date_month"), `resort guests` = n)
+
+
+resort_guests <- data_resort %>%
+  count(arrival_date_month) %>%
+  rename(month = arrival_date_month, `resort guests` = n)
+
+city_guests <- data_city %>%
+  count(arrival_date_month) %>%
+  rename(month = arrival_date_month, `city guests` = n)
+
+final_guests <- resort_guests %>%
+  full_join(city_guests, by = "month") %>%
+  replace_na(list(`resort guests` = 0, `city guests` = 0)) %>%
+  arrange(match(month, month.name))
+
+ggplot(final_guests, aes(x = month)) +
+  geom_line(aes(y = `resort guests`, color = "Resort Hotel", group = 1)) +
+  geom_line(aes(y = `city guests`, color = "City Hotel", group = 1)) +
+  scale_color_manual(values = c("blue", "red")) +
+  labs(title = "Total Number of Guests per Month Across Different Hotel Types", y = "Number of Guests", x = "Month", color = "Hotel") +
+  theme_minimal()
+```
+
+Based on this graph, number of guests in City Hotels is always greater than number of guests in Resort Hotels. August looks to be the busiest month for both types of hotels, and January is the lowest.
+
+```{r, fig.width = 10, fig.height = 10, echo = F, fig.align='center'}
+numeric_cols <- sapply(data_cleaned, is.numeric)
+numeric_data <- data_cleaned[, numeric_cols]
+
+corr_matrix <- cor(numeric_data, method = "spearman")
+
+melted_corr <- melt(corr_matrix)
+
+ggplot(melted_corr, aes(x=Var1, y=Var2, fill=value)) +
+  geom_tile() +
+  scale_fill_gradient2(low="blue", mid="white", high="red", midpoint=0, limit=c(-1,1)) +
+  geom_text(aes(label = round(value, 2)), color = "black", size = 2) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90),
+        axis.text = element_text(size = 8),
+        axis.title = element_text(size = 10)) +
+  ggtitle("Correlation Heatmap") +
+  labs(x = "Variable 1", y = "Variable 2", fill = "Correlation")
+```
+
+This correlation map captures both linear and nonlinear relationships as it depends on spearman coefficients. We see associations that intuitively make sense to us like a positive association between the number of adults and children in a listing and the adr. Other feature assocations that are particularly notable for our classification question is that we see high positive associations between lead times and adr as well as previous cancellations and adr. Strong negative associations include the presence of booking changes or special requests, and required car parking spaces.
+
+\newpage
+
+## Modeling
+
+#### Preparing Data for Model
+
+We notice that a lot of entries in 'company' attribute are nulls:
+
+```{r, echo = F}
+sum(is.na(data_cleaned$company))/nrow(data_cleaned)
+```
+
+Over 94% of 'company' column is null. Therefore, the best strategy will be to drop the column altogether. If we were to remove the null rows, most of the other data would be gone.
+
+We will turn categorical entries: hotel type, arrival_date_month, meal, country, market_segment, agent, distribution_channel, reserved_room_type, customer_type, reservation_status, reserved_room_type, assigned_room_type.
+
+We identifying categorical columns, as those will be turned into factors:
+
+```{r, echo=F}
+cat_cols <- data_cleaned %>% 
+  select_if(is.character) %>%
+  names()
+cat_cols
+```
+
+Here, we convert categorical features to factor variables.
+
+We drop the `agent` and `company` features as they are predominately null, and we believe that they will not contribute to the model. We also drop reservation_status_date and reservation_status as those are directly correlated with is_canceled. Therefore, these would overpower any effects other attributes would have. We also drop the column country. We recognize that country's climate as a certain date might effect whether customers cancel the booking. In this study, we are interested in such effect. Rather, we look directly at booking statistics available to hotels to notice any correlations, internationally.
+
+```{r, include=F}
+data_fct <- data_cleaned[, !(names(data_cleaned) %in% c("country", "reservation_status_date", "reservation_status"))]
+
+data_fct$hotel = as.factor(data_fct$hotel)
+data_fct$arrival_date_month = as.factor(data_fct$arrival_date_month)
+data_fct$meal = as.factor(data_fct$meal)
+data_fct$market_segment = as.factor(data_fct$market_segment)
+data_fct$distribution_channel = as.factor(data_fct$distribution_channel)
+
+data_fct$reserved_room_type = as.factor(data_fct$reserved_room_type)
+data_fct$assigned_room_type = as.factor(data_fct$assigned_room_type)
+data_fct$deposit_type = as.factor(data_fct$deposit_type)
+data_fct$customer_type = as.factor(data_fct$customer_type)
+
+str(data_fct)
+```
+
+```{r, include = F}
+drop <- c("agent","company")
+data_fct = data_fct[,!(names(data_fct) %in% drop)]
+```
+
+### Lasso Regularization
+
+```{r, include = F}
+dim(data_fct)
+Y <- data_fct$is_canceled # extract Y
+length(Y)
+X.fl <- model.matrix(is_canceled~., data=data_fct)[, -1]
+dim(X.fl)
+```
+
+```{r, include = F}
+nrow(Y)
+cv.fit <- cv.glmnet(X.fl, Y, alpha = 1, nfold = 10)
+```
+
+```{r, echo = F, out.width='50%', out.height='50%', fig.align='center'}
+plot(cv.fit)
+```
+
+From the above plot we see that the best value for log($\lambda$) is between about -9 and -6.3.
+
+```{r, include = F}
+names(cv.fit); summary(cv.fit)
+
+cv.fit$cvm              
+cv.fit$lambda.min 
+cv.fit$lambda.1se
+cv.fit$nzero
+```
+
+```{r, echo = F, out.width='50%', out.height='50%', fig.align='center'}
+#ead(data.frame(cv.fit$lambda, cv.fit$nzero))
+plot(cv.fit$lambda, cv.fit$nzero, type = "p",
+     xlab="lambda", ylab="number of non-zeros")
+```
+
+We extract the coefficients from the cross-validated Lasso model fit stored in the **`cv.fit`** that have the coefficients corresponding to the value of lambda that gives the smallest value of the mean cross-validated error plus one standard error.
+
+```{r, echo = F}
+coef.min <- coef(cv.fit, s="lambda.1se") #s=c("lambda.1se","lambda.min") or lambda value
+var.min <- coef.min@Dimnames[[1]][coef.min@i + 1][-1]
+(var.min)
+```
+
+After LASSO regularization, we pick out columns that are significant and run multiple. logistic regression
+
+```{r, include= F}
+data.fl.sub <-  data_fct[,c("is_canceled", "lead_time", "arrival_date_month", "stays_in_week_nights", "stays_in_weekend_nights", "adults", "children", "babies", "meal", "distribution_channel", "reserved_room_type", "assigned_room_type", "booking_changes", "deposit_type", "days_in_waiting_list", "customer_type", "adr", "required_car_parking_spaces", "total_of_special_requests")] # get a subset with response and LASSO output
+fit.min.lm <- lm(is_canceled~., data=data.fl.sub)  # debiased or relaxed LASSO
+Anova(fit.min.lm)
+```
+
+```{r echo=F}
+summary(fit.min.lm) 
+```
+
+Notice that is_canceled is binary, and 0 means booking was not canceled while 1 means booking was canceled. Therefore, a positive coefficient in front of a variable means that variable increases the number of canceled bookings while a negative coefficient decreases the number of cancelled bookings.
+
+Overall, arrival date month is a significant variable, with June being the most negatively influential month, and the number of cancellations decreases in June. December increases the number of bookings being canceled the most out of all months. From all coefficients, getting assigned room type L has a positive largest coefficient relation to whether the booking is cancelled (number of cancellations increases).
+
+Total of special requests has a negative effect on is_canceled, so an increase in one unit of total of special requests decreases is_canceled by 1.3168 units, so number of cancellations becomes smaller.
+
+Number of adults, children, and babies increases the number of canceled bookings. This makes sense since the more people there are in a group, the higher the chance that there might be some circumstance at which the family/group of people cannot make it to the hotel anymore.
+
+### Multiple Logistic Regression
+
+In this section, we begin by establishing a baseline for classification models. This logistic regression will serve as a benchmark for comparing the performance of future models. We choose to begin with a logistic regression as it is interpretable and offers reasonable performance when modeling relationships between a binary response variable and one or more predictor variables.
+
+We first create a train test split of 70/30. Next, we run a logistic regression while including most of the features of the original data.
+
+```{r, echo=F}
+data_fct$is_canceled <- as.factor(data_fct$is_canceled)
+
+set.seed(123)
+
+train.index <- sample(nrow(data_fct), 0.7 * nrow(data_fct))
+train.data <- data_fct[train.index, ]
+test.data <- data_fct[-train.index, ]
+logregall <- glm(is_canceled ~ ., data = train.data, family = binomial)
+
+predictions <- predict(logregall, newdata = test.data, type = "response")
+```
+
+We then plot the accuracy and AUC to assess the model and find that the model has a 0.81 accuracy and 0.84 AUC, which are decently high.
+
+```{r, echo=F, out.width='50%', out.height='50%', message=FALSE, fig.align='center'}
+auc <- roc(test.data$is_canceled, predictions)$auc
+accuracy <- mean(round(predictions) == test.data$is_canceled)
+
+plot(roc(test.data$is_canceled, predictions), col = "blue", main = "ROC Curve")
+
+text(0.6, 0.2, paste("AUC =", round(auc, 2)), col = "blue", cex = 1.2)
+text(0.6, 0.1, paste("Accuracy =", round(accuracy, 2)), col = "blue", cex = 1.2)
+```
+
+Next, we use LASSO to regularize the model and limit the number of features we select for the logistic regression model. The idea is to develop a parsimonious logistic regression model that can predict cancellations based on a smaller set of features that still explain a large proportion of variability in the data.
+
+```{r, echo=F}
+fit.log.reg <- glm(is_canceled ~ ., data = data.fl.sub, family = binomial)
+summary(fit.log.reg)
+```
+
+### LASSO + Multiple Logistic Regression
+
+```{r, echo=F, message=FALSE}
+set.seed(123)
+
+train.index <- sample(nrow(data.fl.sub), 0.7 * nrow(data.fl.sub))
+train.data <- data.fl.sub[train.index, ]
+test.data <- data.fl.sub[-train.index, ]
+fit.log.reg <- glm(is_canceled ~ ., data = train.data, family = binomial)
+
+predictions <- predict(fit.log.reg, newdata = test.data, type = "response")
+```
+
+We find that after regularization and multiple logistic regression, we can predict booking cancellations with an accuracy of 0.78 and an AUC of 0.84. This is not too much lower than our original model that included all features. We may assume that the predictor variables are all highly relevant for predicting the response variable, which may explain why Lasso regularization did not improve model performance significantly.
+
+```{r, echo=F, out.width='50%', out.height='50%', message=FALSE, fig.align='center'}
+auc <- roc(test.data$is_canceled, predictions)$auc
+accuracy <- mean(round(predictions) == test.data$is_canceled)
+
+plot(roc(test.data$is_canceled, predictions), col = "blue", main = "ROC Curve")
+
+text(0.6, 0.2, paste("AUC =", round(auc, 2)), col = "blue", cex = 1.2)
+text(0.6, 0.1, paste("Accuracy =", round(accuracy, 2)), col = "blue", cex = 1.2)
+```
+
+### Regression Trees
+
+We begin by generating a train test split.
+```{r, echo=F}
+set.seed(123)
+train_idx <- sample(nrow(data_fct), round(0.7 * nrow(data_fct)))
+train_data <- data_fct[train_idx, ]
+test_data <- data_fct[-train_idx, ]
+```
+
+##### Single predictor (lead_time) 
+
+\
+```{r, echo=F, out.width='50%', out.height='50%', fig.align='center'}
+fit.canceled.lead <- rpart(is_canceled ~ lead_time, data = train_data)
+
+preds <- predict(fit.canceled.lead, test_data, type = "class")
+
+accuracy <- sum(diag(table(preds, test_data$is_canceled))) / nrow(test_data)
+cat("Accuracy:", accuracy, "\n")
+
+rpart.plot(fit.canceled.lead)
+```
+
+We begin by fitting a regression tree on a single factor, `lead_time`, so to see how well a decision tree can predict hotel cancellations with limited information. We find that the accuracy of this model is around 0.66, which is low as expected.
+
+##### Two predictors (total_of_special_requests and adr)
+
+\
+```{r results= 'hold', echo=F, out.width='50%', out.height='50%', fig.align='center'}
+fit2 <- rpart(is_canceled ~ adr + total_of_special_requests, data = train_data)
+
+preds <- predict(fit2, test_data, type = "class")
+
+accuracy <- sum(diag(table(preds, test_data$is_canceled))) / nrow(test_data)
+cat("Accuracy:", accuracy, "\n")
+
+rpart.plot(fit2)
+```
+Arbitrarily we selected two factors, `total_of_special_requests` and `adr`, to see if a regression tree can make accurate predictions with just two factors and the interactions between them. The accuracy of this model is 0.67, which is a slight improvement over our previous single factor model. 
+
+##### All avaiable predictors
+
+```{r, echo=F, out.width='50%', out.height='50%', fig.align='center'}
+fit <- rpart(is_canceled ~ ., data = train_data)
+
+preds <- predict(fit, test_data, type = "class")
+
+accuracy <- sum(diag(table(preds, test_data$is_canceled))) / nrow(test_data)
+cat("Accuracy:", accuracy, "\n")
+
+rpart.plot(fit, extra = 1)
+```
+Finally, we feet a decision tree over all available predictors. This final tree had the highest accuracy among the regression trees so far, with an accuracy of 0.81. Within this chart we can get a sense of the most important predictors (e.g. `no refunds`, `lead_time`, `previous cancellations`), as well as interactions between factors. 
+
+### Random Forest
+
+```{r, echo=F}
+rf_model <- randomForest(is_canceled ~ ., data = train_data)
+
+preds <- predict(rf_model, test_data)
+
+accuracy <- sum(preds == test_data$is_canceled) / nrow(test_data)
+cat("Accuracy:", accuracy, "\n")    
+```
+We also decide to fit a random forest model on our data. Because we do not specify `ntree` or `mtry`, the randomForest function's default values of 500 trees to grow and the square root of the number of predictors as the number of variables randomly sampled at each split of the tree are used. We find that this model has an accuracy of almost 0.87!
+
+### XGBoost Tree
+
+In this final section, we look to use XG boosting, which is a form of gradient boosting, in order to generate a high accuracy predictive model. XGBoosting iteratively builds decision trees to minimize the loss function, using gradient boosting to correct errors made by previous models. In the following model, we use XGBoost with logistic regression through the "binary:logistic" objective function. This allows us to use boosting for our hotel cancellation binary classification question.
+
+```{r, echo=F}
+# Putting data into correct format (all numerical, features and labels separate)
+data_fct <- data_fct %>%
+  mutate_at(vars(-is_canceled), as.numeric)
+labels <- data_fct$is_canceled
+features <- data_fct[, -which(names(data_fct) == "is_canceled")]
+
+# Train test split
+set.seed(123)
+train_idx <- createDataPartition(labels, p = 0.7, list = FALSE)
+train_data <- data_fct[train_idx, ]
+test_data <- data_fct[-train_idx, ]
+
+# Changing response to numeric from factor
+train_data$is_canceled <- ifelse(train_data$is_canceled == "0", 0, 1)
+test_data$is_canceled <- ifelse(test_data$is_canceled == "0", 0, 1)
+
+# DMatrix creation
+dtrain <- xgb.DMatrix(data = as.matrix(train_data[, -which(names(train_data) == "is_canceled")]), label = train_data$is_canceled)
+dtest <- xgb.DMatrix(data = as.matrix(test_data[, -which(names(test_data) == "is_canceled")]), label = test_data$is_canceled)
+
+# XGBoost params
+params <- list(
+  objective = "binary:logistic",
+  eval_metric = "auc",
+  max_depth = 5,
+  eta = 0.1,
+  gamma = 0,
+  subsample = 1,
+  colsample_bytree = 1
+)
+
+model <- xgb.train(params, dtrain, nrounds = 100)
+
+
+pred <- predict(model, dtest)
+pred_factor <- as.factor(ifelse(pred >= 0.5, "1", "0"))
+
+# model evaluation
+confusionMatrix(table(pred_factor, test_data$is_canceled))
+```
+
+We see that with XGBoosting, we can create a model that has high sensitivity but lower specificity. The overall accuracy of our XGBoost model is 0.825, which is a slight increase from our initial multiple logistic regression. Graphed below is the confusion matrix, where we can see the true positive, true negative, and false positive/negative frequencies/rates.
+
+```{r, echo=F, out.width='50%', out.height='50%', fig.align='center'}
+cm <- confusionMatrix(table(pred_factor, test_data$is_canceled))
+
+# turning to a dataframe before using ggplot to plot
+cm_df <- data.frame(
+  Actual = rep(c("Not Canceled", "Canceled"), each = 2),
+  Predicted = rep(c("Not Canceled", "Canceled"), times = 2),
+  Value = c(cm$table[1, 1], cm$table[2, 1], cm$table[1, 2], cm$table[2, 2])
+)
+
+ggplot(cm_df, aes(x = Actual, y = Predicted, fill = Value)) +
+  geom_tile() +
+  geom_text(aes(label = Value)) +
+  scale_fill_gradient(low = "white", high = "pink") +
+  labs(x = "Actual", y = "Predicted", title = "Confusion Matrix")
+```
+
+## Conclusions
+
+Given the accuracy scores for each model, we find that Random Forest yields the highest accuracy score at 0.86 when compared to other models. In addition to having the highest accuracy score, we believe this model is favorable when compared to the other models we used. Unlike some other models (ex. LASSO), Random Forest does not overfit data as a result of using various trees and random sampling. Furthermore, this model was able to accommodate our data set with categorical and numerical data. However, Random Forest requires hyperparameter tuning and little control over results. XGBoost computed the second highest accuracy score. This technique is also less prone to overfitting and is useful when determining variables significant in making predictions. Still, XGBoost is more difficult to interpret/visualize than Random Forest and can lead to overfitting if not tuned adequately. When compared to other models, LASSO may have calculated a lower accuracy score because of small coefficients that were excluded from the model and correlation between certain variables. 
+
+## Further Extensions
+
+In finding the best parameters in Random Forest, we were mindful of the impact of hyperparameter tuning, which is both computationally intensive and can lead to overfitting. We were careful in reviewing variables in this data set to limit overfitting by eliminating irrelevant/redundant variables. However, we are aware that this may be insufficient in mitigating negative impacts and our results may be subject to overfitting. As for other models that could have been considered, neural nets would have been a promising avenue for our analysis. Because neural networks have the ability to handle various data types and handle complex/incomplete data, neural nets would have been helpful if not for the potential challenges in manipulating categorical data.
+
+
+
+
