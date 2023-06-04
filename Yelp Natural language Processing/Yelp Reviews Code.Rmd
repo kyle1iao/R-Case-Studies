@@ -1,0 +1,1076 @@
+---
+title: "Modern Data Mining - HW 5"
+author:
+- Kateryna Suprun
+- Kyle Liao
+- Hannah Xiao
+date: 'Due: 11:59Pm,  4/16, 2023'
+output:
+  html_document:
+    code_folding: show
+    highlight: haddock
+    theme: lumen
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+  word_document:
+    toc: yes
+    toc_depth: '4'
+urlcolor: blue  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.height=4, fig.width=6, warning = F)
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(randomForest, tree, ISLR, rpart, rattle, pROC, partykit, ggplot2, glmnet, leaps, dplyr, keras, neuralnet, imager, ranger, tm, randomForest)
+```
+
+
+
+
+
+# Overview
+
+For the purpose of predictions, a nonlinear model or a model free approach could be beneficial. 
+
+Neural networks are a good way to do prediction because they are capable of learning complex patterns and relationships within data, without requiring explicit programming of rules. They are able to recognize non-linear relationships and make predictions based on those patterns, which can be very difficult to accomplish with traditional statistical models. Neural networks can also be used for a wide range of prediction tasks, including image and speech recognition, natural language processing, and time series forecasting.
+
+Neural networks have been around for several decades, but they have become more popular and widely used in recent years due to several factors. One reason is the increase in available data, which allows for more robust and accurate training of neural networks. Additionally, advancements in hardware technology have made it easier and more cost-effective to train large neural networks. Another reason is the development of new neural network architectures, such as convolutional neural networks (CNNs) and recurrent neural networks (RNNs), which have proven to be very effective for specific tasks. Finally, the rise of deep learning, which is a subfield of machine learning that utilizes deep neural networks with many layers, has further propelled the popularity of neural networks due to their ability to achieve state-of-the-art performance on a wide range of tasks.Neural Network is a natural extension of the linear models. 
+
+On a model free side, a binary decision tree is the simplest, still interpretable and often provides insightful information between predictors and responses. To improve the predictive power we would like to aggregate many equations, especially uncorrelated ones. One clever way to have many free samples is to take bootstrap samples. For each bootstrap sample we  build a random tree by taking a randomly chosen number of variables to be split at each node. We then take average of all the random bootstrap trees to have our final prediction equation. This is RandomForest. 
+
+Ensemble method can be applied broadly: simply take average or weighted average of many different equations. This may beat any single equation in your hand.
+
+
+All the methods covered can handle both continuous responses as well as categorical response with multiple levels (not limited to binary response.)
+
+
+## Objectives
+
+- Understand a basic NN 
+  + Be able to write an architecture (a model)
+  + Understand the roles of 
+    - Hidden layers
+    - Neurons
+    - Relu activation function
+    
+  + Be able to run keras to train and to use a NN. 
+
+- Understand trees
+    + single tree/displaying/pruning a tree
+    + RandomForest
+    + Ensemble idea
+
+- R functions/Packages
+    + `kears`
+    + `tree`, `RandomForest`, `ranger`
+    
+- Json data format
+
+- text mining
+    + bag of words
+  
+
+Data needed:
+
++ `yelp_review_20k.json`
++ `IQ.Full.csv`
+
+
+# Problem 0: Lectures
+
+Please study all the lectures. Understand the main elements in each lecture and be able to run and compile the lectures
+
++ textmining
++ deep learning
++ trees
++ boosting
+
+
+
+# Problem 1: Yelp challenge 2019
+
+**Note:** This problem is rather involved. It covers essentially all the main materials we have done so far in this semester. It could be thought as a guideline for your final project if you want when appropriate. 
+
+Yelp has made their data available to public and launched Yelp challenge. [More information](https://www.yelp.com/dataset/). It is unlikely we will win the $5,000 prize posted but we get to use their data for free. We have done a detailed analysis in our lecture. This exercise is designed for you to get hands on the whole process. 
+
+For this case study, we downloaded the [data](https://www.yelp.com/dataset/download) and took a 20k subset from **review.json**. *json* is another format of a data. It is flexible and commonly-used for websites. Each item/subject/sample is contained in a brace *{}*. Data is stored as **key-value** pairs inside the brace. *Key* is the counterpart of column name in *csv* and *value* is the content/data. Both *key* and *value* are quoted. Each pair is separated by a comma. The following is an example of one item/subject/sample.
+
+```{json}
+{
+  "key1": "value1",
+  "key2": "value2"
+}
+```
+
+
+**Data needed:** yelp_review_20k.json available in Canvas.
+
+**yelp_review_20k.json** contains full review text data including the user_id that wrote the review and the business_id the review is written for. Here's an example of one review.
+
+```{json}
+{
+    // string, 22 character unique review id
+    "review_id": "zdSx_SD6obEhz9VrW9uAWA",
+
+    // string, 22 character unique user id, maps to the user in user.json
+    "user_id": "Ha3iJu77CxlrFm-vQRs_8g",
+
+    // string, 22 character business id, maps to business in business.json
+    "business_id": "tnhfDv5Il8EaGSXZGiuQGg",
+
+    // integer, star rating
+    "stars": 4,
+
+    // string, date formatted YYYY-MM-DD
+    "date": "2016-03-09",
+
+    // string, the review itself
+    "text": "Great place to hang out after work: the prices are decent, and the ambience is fun. It's a bit loud, but very lively. The staff is friendly, and the food is good. They have a good selection of drinks.",
+
+    // integer, number of useful votes received
+    "useful": 0,
+
+    // integer, number of funny votes received
+    "funny": 0,
+
+    // integer, number of cool votes received
+    "cool": 0
+}
+```
+
+## Goal of the study
+
+The goals are 
+
+1) Try to identify important words associated with positive ratings and negative ratings. Collectively we have a sentiment analysis.  
+
+2) To predict ratings using different methods. 
+
+## JSON data and preprocessing data
+
+i. Load *json* data
+
+The *json* data provided is formatted as newline delimited JSON (ndjson). It is relatively new and useful for streaming.
+```{json}
+{
+  "key1": "value1",
+  "key2": "value2"
+}
+{
+  "key1": "value1",
+  "key2": "value2"
+}
+```
+
+The traditional JSON format is as follows.
+```{json}
+[{
+  "key1": "value1",
+  "key2": "value2"
+},
+{
+  "key1": "value1",
+  "key2": "value2"
+}]
+```
+
+
+We use `stream_in()` in the `jsonlite` package to load the JSON data (of ndjson format) as `data.frame`. (For the traditional JSON file, use `fromJSON()` function.)
+
+```{r}
+pacman::p_load(jsonlite)
+yelp_data <- jsonlite::stream_in(file("yelp_review_20k.json"), verbose = F)
+str(yelp_data)  
+# different JSON format
+# tmp_json <- toJSON(yelp_data[1:10,])
+# fromJSON(tmp_json)
+```
+
+**Write a brief summary about the data:**
+
+a) Which time period were the reviews collected in this data?
+```{r}
+head(yelp_data$date, 16)
+```
+Data was collected in the period of 2010s.
+b) Are ratings (with 5 levels) related to month of the year or days of the week? Only address this through EDA please.
+
+We will make rating a categorical variable:
+```{r}
+yelp_data$rating <- c(0)
+yelp_data$rating[yelp_data$stars >= 4] <- 1
+yelp_data$rating <- as.factor(yelp_data$rating)
+```
+
+```{r}
+weekdays <- weekdays(as.Date(yelp_data$date)) # get weekdays for each review
+months <- months(as.Date(yelp_data$date)) # get months
+
+#seeing when people tend to write reviews
+par(mfrow=c(1,2))
+pie(table(weekdays), main="Prop of reviews") # Pretty much evenly distributed
+pie(table(months))
+```
+There is not much variation in how many reviews get written over days of the week, but it looks like most reviews are written on Wednesday, Saturday, and Sunday. Also, larger portion of reviews gets written in August and the smallest portion of reviews in written in February, December, November.
+ii. Document term matrix (dtm) (bag of words)
+
+ Extract document term matrix for texts to keep words appearing at least .5% of the time among all 20000 documents. Go through the similar process of cleansing as we did in the lecture. 
+ 
+```{r}
+data1.text <- yelp_data$text # take the text out summary(data)
+length(data1.text)
+typeof(data1.text)
+print(data1.text[1:5]) # view a few documents
+```
+```{r}
+mycorpus1  <- VCorpus(VectorSource(data1.text))
+
+
+# Control list for creating our DTM within DocumentTermMatrix
+# Can tweak settings based off if you want punctuation, numbers, etc.
+control_list <- list( tolower = TRUE, 
+                      removePunctuation = TRUE,
+                      removeNumbers = TRUE, 
+                      stopwords = stopwords("english"), 
+                      stemming = TRUE)
+# dtm with all terms:
+dtm.10.long  <- DocumentTermMatrix(mycorpus1, control = control_list)
+#inspect(dtm.10.long)
+
+# kick out rare words 
+dtm.10<- removeSparseTerms(dtm.10.long, 1-.01)  
+inspect(dtm.10)
+
+n <- 2
+
+# Our custom tokenizer
+# Uses the ngrams function from the NLP package
+# Right now this is for bigrams, but you can change it by changing the value of
+# the variable n (includes N-grams for any N <= n)
+ngram_tokenizer <- function(x, n) {
+  unlist(lapply(ngrams(words(x), 1:n), paste, collapse = "_"), use.names = FALSE)
+}
+
+#prepare clean corpus
+mycorpus1 <- VCorpus(VectorSource(data1.text))
+mycorpus_clean <- tm_map(mycorpus1, content_transformer(tolower))
+
+# Removes common English stopwords (e.g. "with", "i")
+mycorpus_clean <- tm_map(mycorpus_clean, removeWords, stopwords("english"))
+
+# Removes any punctuation
+# NOTE: This step may not be appropriate if you want to account for differences
+#       on semantics depending on which sentence a word belongs to if you end up
+#       using n-grams or k-skip-n-grams.
+#       Instead, periods (or semicolons, etc.) can be replaced with a unique
+#       token (e.g. "[PERIOD]") that retains this semantic meaning.
+mycorpus_clean <- tm_map(mycorpus_clean, removePunctuation)
+
+# Removes numbers
+mycorpus_clean <- tm_map(mycorpus_clean, removeNumbers)
+
+
+```
+
+So far, 16 cells are non zero.
+a) Briefly explain what does this matrix record? What is the cell number at row 100 and column 405? What does it represent?
+The rows of the matrix represent the document numbers and the columns represent all the words that are within the documents' reviews. Each entry provides frequency for that word in the review.
+
+Cell number at row 100 and column 405: 
+```{r}
+dtm.10[100, 405]
+colnames(dtm.10)[405]
+```
+The term length is 5. This represents that in review 100, 'local' was repeated 4 times.
+
+
+b) What is the sparsity of the dtm obtained here? What does that mean?
+```{r}
+inspect(dtm.10)
+```
+Sparsity is 96%.
+This means that 96% of the entries in the matrix are 0.
+
+
+c) Set the stars as a two category response variable called rating to be “1” = 5,4 and “0”= 1,2,3. Combine the variable rating with the dtm as a data frame called data2. 
+```{r}
+names(yelp_data)
+#yelp data already has categorical variable
+
+
+#Data preparation
+data1.temp <- data.frame(yelp_data,as.matrix(dtm.10) )
+dim(data1.temp)
+names(data1.temp)[1:30]
+data2 <- data1.temp[, c(1,7, 8,11, 14:ncol(data1.temp))]
+names(data2)[1:20]
+dim(data2)
+
+library(data.table)
+if(!file.exists("data/YELP_tm_freq.csv")) {
+  fwrite(data2, "data/YELP_tm_freq.csv", row.names = FALSE)
+}
+
+```
+
+## Analyses
+
+Get a training data with 13000 reviews and the 5000 reserved as the testing data. Keep the rest (2000) as our validation data set. 
+```{r}
+data2 <- fread("data/YELP_tm_freq.csv") 
+#data2$rating <- as.factor(data2$rating)
+
+data2 <- data2[, -c(1:4, 8)]
+str(data2)
+set.seed(1) # for the purpose of reproducibility
+n <- nrow(data2)
+test.index <- sample(n, 5000)
+# length(test.index)
+data2.test <- data2[test.index, -c(4)] # only keep rating and the texts
+data2.train <- data2[-test.index,  -c(4)]
+
+valid.index <- 1:(nrow(data2.train) - 13000)
+data2.valid <- data2.train[valid.index]
+
+
+str(data2.test)
+```
+
+### LASSO
+
+i. Use the training data to get Lasso fit. Choose lambda.1se. Label the the fit as fit.lasso. Comment on what tuning parameters are chosen at the end and why?
+```{r}
+y <- as.factor(data2.train$rating)
+X1 <- sparse.model.matrix(rating~., data=data2.train)[, -1]
+dim(X1)
+set.seed(2)
+fit.lasso <- cv.glmnet(X1, y, alpha=.99, family="binomial")
+# 1.25 minutes in my MAC
+plot(fit.lasso)
+# this this may take you long time to run, we save fit.lasso
+saveRDS(fit.lasso, file="data/TextMining_lasso.RDS")
+# fit.lasso can be assigned back by
+# fit.lasso <- readRDS("data/TextMining_lasso.RDS")
+# number of non-zero words picked up by LASSO when using lambda.1se
+coef.1se <- coef(fit.lasso, s="lambda.1se")
+lasso.words <- coef.1se@Dimnames[[1]] [coef.1se@i][-1] # non-zero variables without intercept.
+summary(lasso.words)
+# or our old way
+coef.1se <- coef(fit.lasso, s="lambda.1se")
+coef.1se <- coef.1se[which(coef.1se !=0),]
+lasso.words <- rownames(as.matrix(coef.1se))[-1]
+summary(lasso.words)
+```
+
+```{r}
+
+lambda.1se <- coef(fit.lasso, s="lambda.1se")
+lambda.1se <- lambda.1se[which(lambda.1se !=0),]
+lambda.1se
+lasso.words <- rownames(as.matrix(lambda.1se))[-1]
+summary(lasso.words)
+```
+
+ii. Feed the output from Lasso above, get a logistic regression and call this fit.glm
+```{r}
+sel_cols <- c("rating", lasso.words)
+# use all_of() to specify we would like to select variables in sel_cols
+data_sub <- data2.train %>% select(all_of(sel_cols))
+fit.glm <- glm(rating~., family=binomial, data_sub) # takes 3.5 minutes
+## glm() returns a big object with unnecessary information
+# saveRDS(fit.glm,
+# file = "data/TextMining_glm.RDS")
+## trim the glm() fat from
+## https://win-vector.com/2014/05/30/trimming-the-fat-from-glm-models-in-r/
+stripGlmLR = function(cm) {
+cm$y = c()
+cm$model = c()
+cm$residuals = c()
+cm$fitted.values = c()
+cm$effects = c()
+cm$qr$qr = c()
+cm$linear.predictors = c()
+cm$weights = c()
+cm$prior.weights = c()
+cm$data = c()
+cm$family$variance = c()
+cm$family$dev.resids = c()
+cm$family$aic = c()
+cm$family$validmu = c()
+cm$family$simulate = c()
+attr(cm$terms,".Environment") = c()
+attr(cm$formula,".Environment") = c()
+cm
+}
+fit.glm.small <- stripGlmLR(fit.glm)
+saveRDS(fit.glm.small,
+file = "data/TextMining_glm_small.RDS")
+```
+
+```{r}
+fit.glm <- readRDS("data/TextMining_glm_small.RDS")
+fit.glm.coef <- coef(fit.glm)
+fit.glm.coef
+hist(fit.glm.coef)
+
+```
+	
+a) Pull out all the positive coefficients and the corresponding words. Rank the coefficients in a decreasing order. Report the leading 2 words and the coefficients. Describe briefly the interpretation for those two coefficients. 
+
+```{r}
+good.glm <- fit.glm.coef[which(fit.glm.coef > 0)]
+good.glm <- good.glm[-1] # took intercept out
+#names(good.glm)[1:20] # which words are positively associated with good ratings
+good.fre <- sort(good.glm, decreasing = TRUE) # sort the coef's
+round(good.fre, 4)[1:2] # leading 2 positive words, amazing!
+length(good.fre) # 390 good words
+hist(as.matrix(good.fre), breaks=30, col="red")
+
+good.word <- names(good.fre) 
+```
+Leading 2 words: gem (2.0022) and outstand (1.5292). Those 2 words have the largest positive influence on the rating of the places.
+b) Make a word cloud with the top 100 positive words according to their coefficients. Interpret the cloud briefly.
+```{r}
+if (!require("RColorBrewer")) {
+install.packages("RColorBrewer")
+library(RColorBrewer)
+}
+if (!require(wordcloud)) {
+  install.packages("wordcloud")
+}
+library(wordcloud)
+
+cor.special <- brewer.pal(8,"Dark2") # set up a pretty color scheme
+
+good.word[1:300]
+wordcloud(good.word, good.fre, colors=cor.special, ordered.colors=FALSE )
+
+```
+
+c) Repeat a) and b) above for the bag of negative words.
+```{r}
+bad.glm <- fit.glm.coef[which(fit.glm.coef < 0)]
+or.special <- brewer.pal(6,"Dark2")
+bad.fre <- sort(-bad.glm, decreasing = TRUE)
+round(bad.fre, 4)[1:40]
+
+hist(as.matrix(bad.fre), breaks=30, col="red")
+
+bad.word <- names(bad.fre)
+wordcloud(bad.word, bad.fre,
+color=cor.special, ordered.colors=F)
+```
+
+d.) Summarize the findings. 
+The word clouds show that the positive stems of words associated with high ratings are gem, awesom, outstand. The negative stem words associated with bad ratings are mediocr, horribl, worst. There are also more negative words that are strongly associated with bad reviews, whereas there are only about 2 words that have a strong weight on positive reviews.
+iii. What are the major differences among the two methods used so far: Lasso and glm.
+One difference is that Lasso make a model that is more interpretative. This is because it narrows certain coefficients to 0, making is easier to understand which coefficients are important and which ones are not. GLM, however, does not do that.
+
+
+iv.  Using majority votes find the testing errors
+	a) From `fit.lasso`
+```{r}
+dim(X1)
+
+summary(fit.lasso)
+str(data2.test)
+predict.lasso.p <- predict(fit.lasso,as.matrix(data2.test[, -4]), type = "response", s="lambda.1se")
+predict.lasso <- predict(fit.lasso, as.matrix(data2.test[, -4]), type = "class", s="lambda.1se")
+# output majority vote labels
+# LASSO testing errors
+mean(as.factor(data2.test$rating) != predict.lasso) # .61348
+# ROC curve for LASSO estimates
+pROC::roc(as.factor(data2.test$rating), predict.lasso.p, plot=TRUE)
+```
+```{r}
+dim(fit.lasso)
+```
+	
+  b) From `fit.glm`
+```{r}
+predict.glm <- predict(fit.glm, data2.test, type = "response")
+class.glm <- ifelse(predict.glm > .5, "1", "0")
+# length(class.glm)
+testerror.glm <- mean(as.factor(data2.test$rating) != class.glm)
+testerror.glm # mis classification error is 0.132
+pROC::roc(data2.test$rating, predict.glm, plot=T)
+```
+
+  
+	c) Which one is smaller?
+Error for lasso: 0.1348
+Error for glm: 0132
+The error for glm is small by very little. Therefore, the models perform equivalently and both can be used.
+
+
+
+### Neural network
+
+i. Let's specify an architecture with the following specifications
+  a) One hidden layers with 20 neurons
+  b) Relu activation function
+  c) Softmax output
+  d) Explain in a high level what is the model? How many unknown weights (parameters are there)
+  
+  The model is a series of layers. The first layer contains a node for a bias and each of the predictors. To get to the next layer, the first layers' node values are multiplied by a weight vector to get the value of the next layer's node. For each layer, the number of parameters is the number of weights in the weight vector plus the bias. The number in the parameters in the bias vector is the number of nodes in the next layer, and the number of weights is the number of nodes in the current layer multiplied by the number of nodes in the next layer. For this architechture, the imput weight vector has 30*907+30=2740, the next weight vector has has (20 times 30)+20=620, the last weight vector has (20 times 2)+2=42. In total there are 27,902 parameters. 
+```{r archetecture}
+data2xnn.train <- data2.train %>% select(-rating)
+p <- dim(data2xnn.train)[2] # number of input variables
+p
+pacman::p_load(keras, ggplot2, glmnet, RColorBrewer, wordcloud, neuralnet,plotly, latex2exp, data.table, randomForest)
+
+#devtools::install_github("rstudio/tensorflow")
+#devtools::install_github("rstudio/keras")
+#tensorflow::install_tensorflow()
+#tensorflow::tf_config()
+library(tensorflow)
+library(keras)
+model <- keras_model_sequential() %>%
+  layer_dense(units = 30, activation = "relu", input_shape = c(p)) %>% 
+  # 1 layer with 16 neurons. default activation is relu
+  layer_dense(units = 20, activation = "relu") %>%  
+  # layer 2 with 8 neurons
+  layer_dense(units = 2, activation = "softmax") # output
+print(model)
+```
+ii. Train your model and call it `fit.nn` 
+  a) using the training data
+  b) split 85% vs. 15% internally
+  c) find the optimal epoch
+The optimal epoch number is around 4, which is where validation loss is minimized. 
+```{r}
+model %>% compile(
+  optimizer = "rmsprop",
+  loss = "sparse_categorical_crossentropy",
+  metrics = c("accuracy")
+)
+
+data2nn_xtrain <- as.matrix(data2xnn.train) # make sure it it is a matrix
+data2nn_ytrain <- as.matrix(data2.train$rating)
+
+fit.nn <- model %>% fit(
+  data2nn_xtrain,
+  data2nn_ytrain,
+  epochs = 20, 
+  batch_size = 512,
+  validation_split = .15
+)
+
+```
+
+iii. Report the testing errors using majority vote. 
+The testing error is 14.08%
+```{r}
+fit.nn <- model %>% fit(
+  data2nn_xtrain,
+  data2nn_ytrain,
+  epochs = 4, 
+  batch_size = 512,
+  validation_split = .15)
+  
+data2x.test <- data2.test %>% select(-rating)
+y.pred <- model %>% predict(as.matrix(data2x.test[,])) %>% k_argmax() %>% as.integer() # majority vote!
+err_df <- data.frame(yhat=y.pred, y=as.matrix(data2.test$rating))
+err <- mean(err_df$yhat != err_df$y)
+err
+```
+
+
+### Random Forest  
+
+i. Briefly summarize the method of Random Forest
+Random forests use individual decision trees to predict with lower variance and hopefully higher accuracy. In random forest, a number of uncorrelated decision trees are generated, each from a bootstrap sample (where the original sample is sampled from with replacement). For each decision tree, in order to increase the chance that an important factor will be chosen for the split point, we randomly choose a certain number of features to be considered and find the best split point from those features that minimizes misclassification errors by majority vote. This is repeated for each tree. When all of the trees are created, the trees are averaged to create the final model. 
+
+
+ii. Now train the data using the training data set by RF and call it `fit.rf`. 
+  a) Explain how you tune the tuning parameters (`mtry` and `ntree`). 
+  For ntree, I looked at the plot of fit.rf to see when the training error bottomed out. This occured around 100 trees, which is what I kept as ntree. For mtry, I plotted the error on the y axis for mtry = 1, 5, 10, 25, 50, 100. Mtry = 100 had the lowest error. I wanted to test larger numbers for mtry but my laptop struggled with the length of the computation. 
+  b) Get the testing error of majority vote. 
+  The testing error is 15.22%. 
+```{r}
+pvals <- 0:1   # preparing y for random forest
+rf_y <- data2.train$rating
+data2x_train <- data2.train %>% select(-rating)
+rf_data <- data.frame(rating = rf_y, data2x_train)
+#fit.rf <- ranger(rating~., rf_data, mtry=4, ntree=20)
+fit.rf.plot <- randomForest(rating~., rf_data, mtry=25, ntree=100)
+plot(fit.rf.plot)
+
+rf_y_test <- data2.test$rating
+data2x.test <- data2.test %>% select(-rating)
+rf_data_test <- data.frame(y = as.factor(rf_y_test), data2x.test)
+
+pred_rf <- predict(fit.rf.plot, rf_data_test, type="response")
+fit.rf.test.err <- mean(data2.test$rating!= round(pred_rf))
+fit.rf.test.err
+```
+```{r}
+rf.error.p <- c(1, 5, 10, 25, 50, 100)
+error <- c()
+  for (p in rf.error.p)  # repeat the following code inside { } 19 times
+{
+  fit.rf <- randomForest(exp(rating)~., data2.train, mtry=p, ntree=15)
+  #plot(fit.rf, col= p, lwd = 3)
+  error[p] <- fit.rf$mse[15]  # collecting oob mse based on 250 trees
+  print(p)
+}
+rf.error.p
+plot(error)
+
+```
+###  PCA first
+
+i. Perform PCA (better to do sparse PCA) for the input matrix first. Decide how many PC's you may want to take and why.
+```{r}
+data2x_train_pca <- data2x_train# %>% select(-text, -date)
+pca <- prcomp(data2x_train_pca, scale=TRUE) 
+  
+
+plot(summary(pca)$importance[2, ], # PVE
+ylab="PVE",
+xlab="Number of PCs",
+pch = 16,
+main="Scree Plot of PVE for AFQT")
+plot(summary(pca)$importance[2,1:20], # PVE
+ylab="PVE",
+xlab="Number of PCs",
+pch = 16,
+main="Scree Plot of PVE for AFQT")
+```
+We will use 5 PC's which is when the rate that the proportion of explained variance no longer decreases rapidly using the elbow method. 
+
+ii. Pick up one of your favorate method above and build the predictive model with PC's. Say you use RandomForest.
+```{r}
+training_set_pca = as.data.frame(predict(pca, data2x_train))
+training_set_pca <- training_set_pca %>% select(PC1, PC2, PC3, PC4, PC5)
+
+
+rf_y <- data2.train$rating
+rf_data <- data.frame(rating = rf_y, training_set_pca)
+fit.rf.pca <- randomForest(rating~., rf_data, mtry=25, ntree=100)
+plot(fit.rf.pca)
+```
+
+iii. What is the testing error? Is this testing error better than that obtained using the original x's? 
+With a testing error of 19.76%, the testing error is not better than the that of the original dataset. 
+```{r}
+data2x_test_pca <- data2.test %>% select(-rating)
+test_set_pca = as.data.frame(predict(pca, data2x_test_pca))
+test_set_pca <- test_set_pca %>% select(PC1, PC2, PC3, PC4, PC5)
+
+
+rf_y.pca <- data2.test$rating
+rf_data.pca <- data.frame(rating = rf_y.pca, test_set_pca)
+pred_rf.pca <- predict(fit.rf.pca, rf_data.pca, type="response")
+fit.rf.test.err.pca <- mean(data2.test$rating!= round(pred_rf.pca))
+fit.rf.test.err.pca
+```
+
+### Ensemble model
+
+i. Take average of some of the  models built above (also try all of them) and this gives us the fit.em. Report it's testing error. (Do you have more models to be bagged, try it.)
+The minimum testing error is around 14.86, when the emsemble predictor is made up of .1 * the PCA RF model + .9 the regular RF model. 
+```{r}
+percent_PCA = rep(0, 100) 
+error = rep(0, 100)
+for (p in 1:100)
+{ 
+  percent_PCA[p] <- p/100
+error[p] <- mean(data2.test$rating!= round((p/100)*predict(fit.rf.pca, test_set_pca, type="response")+(1-p/100)*pred_rf))
+}
+
+plot(percent_PCA, error)
+
+ensemble_pred <- .1*predict(fit.rf.pca, test_set_pca, type="response")+.9*pred_rf
+ensemble.pca <- mean(data2.test$rating!= round(ensemble_pred))
+ensemble.pca
+```
+
+## Final model
+
+Which classifier(s) seem to produce the least testing error? Are you surprised? Report the final model and accompany the validation error. Once again this is THE only time you use the validation data set.  For the purpose of prediction, comment on how would you predict a rating if you are given a review (not a tm output) using our final model? 
+
+The neural network performed the best using the testing data with a testing error of 14.08%. I'm not very surprised because they all performed similarly, but the neural net was slightly more accurate. The validation error of that neural network's final model is 1.55%. If I was given another review, I would need to get the word frequency table using tm and then get the document term matrix. I get this by creating a Volatile Corpus, and using tm_map to standardize the text by making it lowercase, remove english stopwords, puncuation, numbers, and make sure I keep only stem words. Then I use the DocumentTermMatrix function() to convert it to a document term matrix. Once I have the document term matrix, I convert it to a matrix for my neural net to use. I use the predict() function with my model to find the most likely output (0 if a negative review, and 1 if a positive review). 
+
+```{r}
+data2x.valid <- data2.valid %>% select(-rating)
+y.pred <- model %>% predict(as.matrix(data2x.valid[,])) %>% k_argmax() %>% as.integer() # majority vote!
+err_df <- data.frame(yhat=y.pred, y=as.matrix(data2.valid$rating))
+err <- mean(err_df$yhat != err_df$y)
+err
+
+```
+
+
+
+
+
+
+# Problem 2: IQ and successes
+
+## Background: Measurement of Intelligence 
+
+Case Study:  how intelligence relates to one's future successes?
+
+**Data needed: `IQ.Full.csv`**
+
+ASVAB (Armed Services Vocational Aptitude Battery) tests have been used as a screening test for those who want to join the army or other jobs. 
+
+Our data set IQ.csv is a subset of individuals from the 1979 National Longitudinal Study of 
+Youth (NLSY79) survey who were re-interviewed in 2006. Information about family, personal demographic such as gender, race and education level, plus a set of ASVAB (Armed Services Vocational Aptitude Battery) test scores are available. It is STILL used as a screening test for those who want to join the army! ASVAB scores were 1981 and income was 2005. 
+
+**Our goals:** 
+
++ Is IQ related to one's successes measured by Income?
++ Is there evidence to show that Females are under-paid?
++ What are the best possible prediction models to predict future income? 
+
+
+**The ASVAB has the following components:**
+
++ Science, Arith (Arithmetic reasoning), Word (Word knowledge), Parag (Paragraph comprehension), Numer (Numerical operation), Coding (Coding speed), Auto (Automative and Shop information), Math (Math knowledge), Mechanic (Mechanic Comprehension) and Elec (Electronic information).
++ AFQT (Armed Forces Qualifying Test) is a combination of Word, Parag, Math and Arith.
++ Note: Service Branch requirement: Army 31, Navy 35, Marines 31, Air Force 36, and Coast Guard 45,(out of 100 which is the max!) 
+
+**The detailed variable definitions:**
+
+Personal Demographic Variables: 
+
+ * Race: 1 = Hispanic, 2 = Black, 3 = Not Hispanic or Black
+ * Gender: a factor with levels "female" and "male"
+ * Educ: years of education completed by 2006
+ 
+Household Environment: 
+ 
+* Imagazine: a variable taking on the value 1 if anyone in the respondent’s household regularly read
+	magazines in 1979, otherwise 0
+* Inewspaper: a variable taking on the value 1 if anyone in the respondent’s household regularly read
+	newspapers in 1979, otherwise 0
+* Ilibrary: a variable taking on the value 1 if anyone in the respondent’s household had a library card
+	in 1979, otherwise 0
+* MotherEd: mother’s years of education
+* FatherEd: father’s years of education
+
+Variables Related to ASVAB test Scores in 1981 (Proxy of IQ's)
+
+* AFQT: percentile score on the AFQT intelligence test in 1981 
+* Coding: score on the Coding Speed test in 1981
+* Auto: score on the Automotive and Shop test in 1981
+* Mechanic: score on the Mechanic test in 1981
+* Elec: score on the Electronics Information test in 1981
+
+* Science: score on the General Science test in 1981
+* Math: score on the Math test in 1981
+* Arith: score on the Arithmetic Reasoning test in 1981
+* Word: score on the Word Knowledge Test in 1981
+* Parag: score on the Paragraph Comprehension test in 1981
+* Numer: score on the Numerical Operations test in 1981
+
+Variable Related to Life Success in 2006
+
+* Income2005: total annual income from wages and salary in 2005. We will use a natural log transformation over the income.
+
+
+**Note: All the Esteem scores shouldn't be used as predictors to predict income**
+
+## 1. EDA: Some cleaning work is needed to organize the data. 
+
++ The first variable is the label for each person. Take that out.
++ Set categorical variables as factors. 
++ Make log transformation for Income and take the original Income out
++ Take the last person out of the dataset and label it as **Michelle**. 
++ When needed, split data to three portions: training, testing and validation (70%/20%/10%)
+  - training data: get a fit
+  - testing data: find the best tuning parameters/best models
+  - validation data: only used in your final model to report the accuracy. 
+
+```{r, import data}
+og <- read.csv("IQ.Full.csv")
+head(og,5)
+names(og)
+```
+```{r}
+# Remove first column
+IQ <- og[, -1]
+
+# Drop all esteem columns
+IQ <- IQ[ , -c(22:31)]
+
+# Convert categorical to factors
+IQ[,c("Imagazine", "Inewspaper", "Ilibrary", "Gender", "Race")] <- lapply(IQ[,c("Imagazine", "Inewspaper", "Ilibrary", "Gender", "Race")], factor)
+
+# Make log transformation for Income and take the original Income out
+IQ$Income2005 <- log(IQ$Income2005)
+
+# Remove last and label as Michelle
+michelle <- IQ[nrow(IQ),]
+IQ <- IQ[-nrow(IQ),]
+
+# Pre splitting data into train, test, and validation sets
+set.seed(42)
+n <- nrow(IQ)
+train_idx <- sample(1:n, round(0.7*n), replace = FALSE)
+test_idx <- sample(setdiff(1:n, train_idx), round(0.2*n), replace = FALSE)
+valid_idx <- setdiff(setdiff(1:n, train_idx), test_idx)
+
+train_data <- IQ[train_idx,]
+test_data <- IQ[test_idx,]
+valid_data <- IQ[valid_idx,]
+```
+
+## 2. Factors affect Income
+
+We only use linear models to answer the questions below.
+
+i. To summarize ASVAB test scores, create PC1 and PC2 of 10 scores of ASVAB tests and label them as
+ASVAB_PC1 and ASVAB_PC2. Give a quick interpretation of each ASVAB_PC1 and ASVAB_PC2 in terms of the original 10 tests. 
+
+```{r}
+asvab_scores <- IQ[, c("AFQT", "Coding", "Auto", "Mechanic", "Elec", "Science", "Math", "Arith", "Word", "Parag", "Numer")]
+
+asvab_pca <- prcomp(asvab_scores, center = TRUE, scale. = TRUE)
+
+names(asvab_pca)
+asvab_pca.loading <- asvab_pca$rotation
+knitr::kable(asvab_pca.loading)
+```
+ASVAB_PC1 is a linear combination of the 10 ASVAB test scores that explains the most variation in the data. ASVAB_PC2 is another linear combination of the 10 ASVAB 10 scores that explains the second most variation in the data. Positive values indicate higher scores on tests that load positively on a principle component (e.g. `science`, `math`, `word` for PC1). Negative values indicate higher scores on tests that load negatively on a principle component (e.g. `coding` and `AFQT` for PC2). Intuitively, it is possible to interpret that the first PC may represent general intelligence, while the second PC may represent mechanical/technical ability (e.g. `auto`, `mechanic`, `elec` have high positive loadings).
+
+ii. Is there any evidence showing ASVAB test scores in terms of ASVAB_PC1 and ASVAB_PC2, might affect the Income?  Show your work here. You may control a few other variables, including gender. 
+
+We run a multiple linear regression analysis to c heck if ASVAB test scores in terms of ASVAB_PC1 and ASVAB_PC2 might affect the Income.
+
+```{r}
+pc1 <- asvab_pca$x[,1]
+pc2 <- asvab_pca$x[,2]
+
+income <- IQ$Income
+gender <- IQ$Gender
+education <- IQ$Educ
+race <- IQ$Race
+
+linregdata <- as.data.frame(cbind(income, gender, education, race, pc1, pc2))
+
+modelpc1 <- lm(income ~ gender + education + race + pc1, data = linregdata)
+summary(modelpc1)
+car::Anova(modelpc1)
+
+modelpc2 <- lm(income ~ gender + education + race + pc2, data = linregdata)
+summary(modelpc2)
+car::Anova(modelpc2)
+```
+We sese that controlling for other factors like gender, education, and race, pc1 and pc2 are significant and see that they have associations with income. Therefore, it is plausible that these pcs might affect income. 
+
+iii. Is there any evidence to show that there is gender bias against either male or female in terms of income in the above model? 
+
+There is evidence of gender bias against women in the above model. We see that being male has a significant positive association with income. 
+
+We next build a few models for the purpose of prediction using all the information available. From now on you may use the three data sets setting (training/testing/validation) when it is appropriate. 
+
+## 3. Trees
+
+i. fit1: tree(Income ~ Educ + Gender, data.train) with default set up 
+
+    a) Display the tree
+    b) How many end nodes? Briefly explain how the estimation is obtained in each end nodes and deescribe the prediction equation
+    c) Does it show interaction effect of Gender and Educ over Income?
+    d) Predict Michelle's income
+    
+```{r}
+levels(IQ$Gender)
+fit1 <- tree(Income2005 ~ Educ + Gender, train_data)
+
+plot(fit1)
+text(fit1)
+points(IQ$Educ, IQ$Gender, pch=16, cex=.5)
+```
+b) There are four end nodes. Each end node represents a combination of predictors. The prediction equation for each end node is a constant value that represents the average of the response variable for the observations that belong to a node.
+c) The tree can reveal interaction effets between Gender and Education over Income. We see that data is split based on combinations of these two predictors, and because the tree splits on Gender, and then Education, we know that there are interaction effects between these variables.
+
+```{r}
+#michelle$Gender <- ifelse(michelle$Gender == "male", 1, 2)
+
+predict(fit1, michelle)
+```
+
+ii. fit2: fit2 <- rpart(Income2005 ~., data.train, minsplit=20, cp=.009)
+
+    a) Display the tree using plot(as.party(fit2), main="Final Tree with Rpart") 
+    b) A brief summary of the fit2
+    c) Compare testing errors between fit1 and fit2. Is the training error from fit2 always less than that from fit1? Is the testing error from fit2 always smaller than that from fit1? 
+    d) You may prune the fit2 to get a tree with small testing error. 
+    
+```{r}
+fit2 <- rpart(Income2005 ~., train_data, minsplit=20, cp=.009)
+plot(as.party(fit2), main="Final Tree with Rpart")
+```
+b) The rpart model fit2 has Income2005 as a response variable and all available predictors in the data. The model grows until each terminal node contains at least 20 observations. 
+```{r}
+# Testing error for fit1 and fit2
+
+fit1_pred <- predict(fit1, newdata = test_data)
+fit1_test_error <- sqrt(mean((test_data$Income2005 - fit1_pred)^2))
+
+fit2_pred <- predict(fit2, newdata = test_data)
+fit2_test_error <- sqrt(mean((test_data$Income2005 - fit2_pred)^2))
+
+cat("Testing error for fit1:", fit1_test_error, "\n")
+cat("Testing error for fit2:", fit2_test_error, "\n")
+
+# Training error for fit1 and fit2
+pred1_train <- predict(fit1, newdata=train_data)
+fit1_training_error <- mean((train_data$Income2005 - pred1_train)^2)
+
+pred2_train <- predict(fit2, newdata=train_data)
+fit2_training_error <- mean((train_data$Income2005 - pred2_train)^2)
+
+cat("Training error for fit1:", fit1_training_error, "\n")
+cat("Training error for fit2:", fit2_training_error, "\n")
+```
+We see that the training and testing error for fit2 are both less than that of fit1.
+
+d) The pruned tree has the same testing error.
+    
+iii. fit3: bag two trees
+
+    a) Take 2 bootstrap training samples and build two trees using the 
+    rpart(Income2005 ~., data.train.b, minsplit=20, cp=.009). Display both trees.
+    b) Explain how to get fitted values for Michelle by bagging the two trees obtained above. Do not use the predict(). 
+    c) What is the testing error for the bagged tree. Is it guaranteed that the testing error by bagging the two tree always smaller that either single tree? 
+```{r}
+
+set.seed(42)
+
+data.train.b1 <- train_data[sample(nrow(train_data), replace = TRUE), ]
+data.train.b2 <- train_data[sample(nrow(train_data), replace = TRUE), ]
+
+fit3.tree1 <- rpart(Income2005 ~., data = data.train.b1, minsplit = 20, cp = 0.009)
+fit3.tree2 <- rpart(Income2005 ~., data = data.train.b2, minsplit = 20, cp = 0.009)
+
+plot(as.party(fit3.tree1), main = "Tree 1")
+plot(as.party(fit3.tree2), main = "Tree 2")
+
+pred1 <- predict(fit3.tree1, newdata = test_data)
+pred2 <- predict(fit3.tree2, newdata = test_data)
+bagged_pred <- (pred1 + pred2) / 2
+
+# testing error
+bagging_testing_error <- sqrt(mean((test_data$Income2005 - bagged_pred)^2))
+cat("Testing error for bagged tree:", bagging_testing_error, "\n")
+```
+To get the fitted value for Michelle, we can use predict on the bootstrapped trees and average the prediction as opposed to using predict with the bagged tree. The testing error for the bagged tree is above. It is not guaranteed that the testing error by bagging two trees will always be smaller than a singular tree. Bagging is meant to reduce variance and improve performance, but sometimes bagging can perform worse (e.g. if trees are highly correlated).
+
+iv. fit4: Build a best possible RandomForest
+
+    a) Show the process how you tune mtry and number of trees. Give a very high level explanation how fit4 is built.
+    b) Compare the oob errors from fit4 to the testing errors using your testing data. Are you convinced that oob errors estimate testing error reasonably well.
+    c) What is the predicted value for Michelle?
+
+To build the best possible random forest, we need to tune two hyperparamters: the number of trees (ntree) and the number of variables considered at each split (mtry). We begin by tuning the number of trees. We pick a reasonable number of trees that minimizes error (250), and then keep this fixed in order to tune mtry. We plot testing errors across different values of mtry and settle on mtry=5. 
+
+```{r}
+set.seed(42)
+fit.rf.4 <- randomForest(Income2005~., train_data, mtry=5, ntree=100) #1 by default, the minsize = 5 in regres
+names(fit.rf.4) #summary(fit.rf.5)
+
+fit.rf.4.pred <- predict(fit.rf.4, train_data)
+MSE_Train <- mean((train_data$Income - fit.rf.4.pred)^2) # training error
+
+plot(fit.rf.4$mse, xlab="number of trees", col="blue",
+ylab="ave mse up to i many trees using OOB predicted",
+pch=16) # We only need about 100 trees for this
+title(main = "OOB testing errors as a func of number of trees")
+```
+```{r}
+fit.rf <- randomForest(Income2005~., train_data, mtry=5, ntree=500) # change ntree
+plot(fit.rf, col="red", pch=16, type="p",
+main="default plot")
+```
+
+```{r}
+rf.error.p <- 1:19 # set up a vector of length 19
+for (p in 1:19) # repeat the following code inside { } 19 times
+{
+fit.rf <- randomForest(Income2005~., train_data, mtry=p, ntree=250, keep.inbag=T)
+#plot(fit.rf, col= p, lwd = 3)
+rf.error.p[p] <- fit.rf$mse[250] # collecting oob mse based on 250 trees
+}
+rf.error.p # oob mse returned: should be a vector of 19
+plot(1:19, rf.error.p, pch=16,
+main = "Testing errors of mtry with 250 trees",
+xlab="mtry",
+ylab="OOB mse of mtry")
+lines(1:19, rf.error.p)
+```
+
+```{r}
+fit4 <- randomForest(Income2005~., train_data, mtry=4, ntree=250)
+plot(fit4)
+
+fit4$mse[250]
+```
+```{r}
+fit4_pred <- predict(fit4, newdata = test_data)
+
+test_mse <- mean((test_data$Income2005 - fit4_pred)^2)
+
+cat("Testing MSE:", test_mse, "\n")
+```
+We see that the testing MSE is greater than the OOB mse, but not by much. Thus, we are convinced that oob errors estimate testing error reasonably well.
+
+```{r, part c}
+fit.michelle <- predict(fit4, michelle)
+fit.michelle
+michelle$Income2005[1]
+```
+c) We thus predict that Michelle's log income is 9.756403.
+
+v. Now you have built so many predicted models (fit1 through fit4 in this section). What about build a fit5 which bags fit1 through fit4. Does fit5 have the smallest testing error?
+
+```{r}
+set.seed(42)
+
+fit_list <- list(fit1, fit2, fit3.tree1, fit3.tree2, fit4)
+
+fit5_pred_matrix <- matrix(NA, nrow = nrow(test_data), ncol = length(fit_list))
+for (i in 1:5) {
+  fit5_pred_matrix[,i] <- predict(fit_list[[i]], newdata = test_data)
+}
+
+fit5_pred <- rowMeans(fit5_pred_matrix)
+
+fit5_mse <- mean((test_data$Income2005 - fit5_pred)^2)
+fit5_mse
+```
+We bag all the fits to create fit5, which does not have the smallest testing error.
+
+vi.  Summarize the results and nail down one best possible final model you will recommend to predict income. Explain briefly why this is the best choice. Finally for the first time evaluate the prediction error using the validating data set. 
+
+In this section, we create a series of decision tree/random forest models in order to predict outcome. We begin with a tree using two predictors (gender and education), move onto a tree using all available predictors, and then explore ensemble methods like bagging two trees to predict Michelle's income. Finally, we tune the parameters for a random forest. We choose this as our final model because it has the lowest testing error. We see below that fit4's prediction error using the validating data set is 0.6634148.
+
+```{r}
+fit4_pred_valid <- predict(fit4, newdata = valid_data)
+
+mse_valid <- mean((valid_data$Income2005 - fit4_pred_valid)^2)
+mse_valid
+```
+
+vii. Use your final model to predict Michelle's income. 
+
+```{r, same as part c for fit4}
+fit.michelle <- predict(fit4, michelle)
+fit.michelle
+michelle$Income2005[1]
+```
+This prediction is not the best, but we are more interested in how this model performs across larger datasets, rather than singular points.
+
+    
+
+
+
+
+
